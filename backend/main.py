@@ -271,9 +271,16 @@ async def websocket_endpoint(websocket: WebSocket, y_symbol: str, x_symbol: str)
         ).dropna()
 
         # Calculate the historical parameters we need to reuse
-        historical_hedge_ratio, _ = calculate_hedge_ratio(
+        historical_hedge_ratio, model = calculate_hedge_ratio(
             aligned_prices["Y"], aligned_prices["X"]
         )
+
+        if model is None:
+            await websocket.close(code=1000, reason="Model calculation failed.")
+            return
+
+        historical_intercept = model.params.iloc[0]
+
         historical_spread = calculate_spread(
             aligned_prices["Y"], aligned_prices["X"], historical_hedge_ratio
         )
@@ -303,6 +310,10 @@ async def websocket_endpoint(websocket: WebSocket, y_symbol: str, x_symbol: str)
             conn.close()
 
             if latest_y and latest_x:
+
+                current_regression_line_value = historical_intercept + (
+                    historical_hedge_ratio * latest_x["price"]
+                )
                 # Perform the fast, "update" calculations
                 current_spread = latest_y["price"] - (
                     historical_hedge_ratio * latest_x["price"]
@@ -316,13 +327,22 @@ async def websocket_endpoint(websocket: WebSocket, y_symbol: str, x_symbol: str)
                 else:
                     current_z_score = 0.0
 
+                # The timestamp from the DB in common format with timezone data
+
+                timestamp_ms = latest_y["timestamp"]
+
+                aware_timestamp = pd.to_datetime(timestamp_ms, unit="ms", utc=True)
+
+                iso_timestamp = aware_timestamp.isoformat()
+
                 # Prepare the data packet to send to the client
                 live_data_packet = {
-                    "time": latest_y["timestamp"],  # Use one of the timestamps
+                    "time": iso_timestamp,
                     "y_price": latest_y["price"],
                     "x_price": latest_x["price"],
                     "spread": current_spread,
                     "z_score": current_z_score,
+                    "regression_line_value": current_regression_line_value,
                 }
 
                 # Send the data packet as JSON over the WebSocket
