@@ -4,6 +4,7 @@ import asyncio
 from typing import List, Optional
 import pandas as pd
 import numpy as np
+import statsmodels.api as sm
 
 from config import SUPPORTED_SYMBOLS, SUPPORTED_SYMBOLS_DETAIL
 from database import get_db_connection
@@ -140,6 +141,13 @@ def get_chart_data(
     # Resample to the desired timeframe (OHLC)
     ohlc_df = price_df.resample(resample_code).ohlc()
 
+    # --- ENSURE THE INDEX IS UTC ---
+
+    if ohlc_df.index.tz is None:
+        ohlc_df.index = ohlc_df.index.tz_localize("UTC")
+    else:
+        ohlc_df.index = ohlc_df.index.tz_convert("UTC")
+
     # Get just the close prices for our calculations
     y_prices = ohlc_df[(y_symbol, "close")].dropna()
     x_prices = ohlc_df[(x_symbol, "close")].dropna()
@@ -156,6 +164,7 @@ def get_chart_data(
     # Run all our analytics functions
     hedge_ratio, model = calculate_hedge_ratio(aligned_prices["Y"], aligned_prices["X"])
     spread = calculate_spread(aligned_prices["Y"], aligned_prices["X"], hedge_ratio)
+    spread_mean = spread.mean()
     z_score = calculate_zscore(spread)
     adf_result = run_adf_test(spread)
     rolling_corr = calculate_rolling_correlation(
@@ -169,6 +178,8 @@ def get_chart_data(
     spread = spread.where(pd.notna(spread), None)
     z_score = z_score.where(pd.notna(z_score), None)
     rolling_corr = rolling_corr.where(pd.notna(rolling_corr), None)
+    X_with_const_for_prediction = sm.add_constant(aligned_prices["X"])
+    regression_line = model.predict(X_with_const_for_prediction)
 
     # Get the OHLC data for the response
     y_ohlc_response = ohlc_df[y_symbol].dropna().reset_index()
@@ -194,6 +205,7 @@ def get_chart_data(
                 "rolling_corr": (
                     rolling_corr.iloc[i] if pd.notna(rolling_corr.iloc[i]) else None
                 ),
+                "regression_line_value": regression_line.iloc[i],
             }
         )
 
@@ -202,6 +214,7 @@ def get_chart_data(
             "hedge_ratio": hedge_ratio,
             "adf_p_value": adf_result["p_value"],
             "pair": f"{y_symbol}/{x_symbol}",
+            "spread_mean": spread.mean(),
         },
         "timeseries_data": timeseries_data,
     }

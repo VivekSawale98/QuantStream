@@ -1,5 +1,3 @@
-import { Badge } from "primereact/badge";
-import { Card } from "primereact/card";
 import { Menu } from "primereact/menu";
 import { useEffect, useRef, useState } from "react";
 import { ShowerrorAlert, Showloader } from "./Helpers/Loaderhelper";
@@ -8,6 +6,10 @@ import { ChevronDownIcon } from "primereact/icons/chevrondown";
 import { ChevronRightIcon } from "primereact/icons/chevronright";
 import { Toast } from "primereact/toast";
 import { SelectButton } from "primereact/selectbutton";
+import { Dock } from "primereact/dock";
+import { Slider } from "primereact/slider";
+import { InputText } from "primereact/inputtext";
+import PriceChart from "./ChartComponents/PriceChart";
 
 const App = () => {
   ///// Notification Manager
@@ -63,7 +65,7 @@ const App = () => {
     {
       template: (
         <>
-          <div>1 Second</div>
+          <span className="text-black-alpha-90">1 Second</span>
         </>
       ),
       value: "1s",
@@ -71,7 +73,7 @@ const App = () => {
     {
       template: (
         <>
-          <div>1 Minute</div>
+          <span className="text-black-alpha-90">1 Minute</span>
         </>
       ),
       value: "1m",
@@ -79,26 +81,26 @@ const App = () => {
     {
       template: (
         <>
-          <div>5 Minutes</div>
+          <span className="text-black-alpha-90">5 Minutes</span>
         </>
       ),
       value: "5m",
     },
   ];
 
+  const timeframeselectiontemplateselectbtn = (option) => {
+    return option?.template;
+  };
   const [timeframevalue, settimeframevalue] = useState("1s");
+
+  /// rolling window value
+
+  const [rollingwindowvalueinput, setrollingwindowvalueinput] = useState(10);
+  const [rollingwindowvalue, setrollingwindowvalue] = useState(10);
 
   ///////////// Sidebar ///////////////////
 
   ////// Templates
-  const itemRenderer = (item) => (
-    <div className="p-menuitem-content">
-      <a className="flex align-items-center p-menuitem-link">
-        <span className={item.icon} />
-        <span className="mx-2">{item.label}</span>
-      </a>
-    </div>
-  );
 
   const selectedAssetPairTemplate = (option, props) => {
     if (option) {
@@ -233,10 +235,67 @@ const App = () => {
           <SelectButton
             value={timeframevalue}
             onChange={(e) => settimeframevalue(e.value)}
-            itemTemplate={timeframeselectiontemplate}
+            itemTemplate={timeframeselectiontemplateselectbtn}
             optionLabel="value"
             options={timeframeoptions}
           />
+        </div>
+      </>
+    );
+  };
+
+  const rollingwindowtemplate = (item) => {
+    return (
+      <>
+        <div className="card flex justify-content-center">
+          <div className="w-14rem">
+            <label
+              htmlFor="rollingwindowparam"
+              className="font-semibold block mb-2 text-center"
+            >
+              Rolling Window
+            </label>
+            <InputText
+              value={rollingwindowvalueinput}
+              onBlur={(e) => {
+                if (isNaN(parseInt(e.target.value)) || e.target.value < 10) {
+                  setrollingwindowvalue(10);
+                  setrollingwindowvalueinput(10);
+                } else if (e.target.value > 200) {
+                  setrollingwindowvalue(200);
+                  setrollingwindowvalueinput(200);
+                } else {
+                  setrollingwindowvalue(e.target.value);
+                  setrollingwindowvalueinput(e.target.value);
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key == "Enter") {
+                  if (isNaN(parseInt(e.target.value)) || e.target.value < 10) {
+                    setrollingwindowvalue(10);
+                    setrollingwindowvalueinput(10);
+                  } else if (e.target.value > 200) {
+                    setrollingwindowvalue(200);
+                    setrollingwindowvalueinput(200);
+                  } else {
+                    setrollingwindowvalue(e.target.value);
+                    setrollingwindowvalueinput(e.target.value);
+                  }
+                }
+              }}
+              onChange={(e) => setrollingwindowvalueinput(e.target.value)}
+              className="w-full"
+            />
+            <Slider
+              value={rollingwindowvalue}
+              onChange={(e) => setrollingwindowvalue(e.value)}
+              className="w-full"
+              id="rollingwindowparam"
+              min={10}
+              max={200}
+              e
+            />
+          </div>
         </div>
       </>
     );
@@ -250,7 +309,7 @@ const App = () => {
         return (
           <span className="inline-flex align-items-center gap-1 px-2 py-2">
             <i className="pi pi-chart-bar p-2"></i>
-            <span className="text-black-alpha-90 font-bold">
+            <span className="text-black-alpha-90 font-bold text-center">
               <span className="text-900">QuantStream Analytics Dashboard</span>
             </span>
           </span>
@@ -261,7 +320,11 @@ const App = () => {
       separator: true,
     },
     {
-      label: "PAIR SELECTION",
+      label: (
+        <>
+          <div className="text-center">PAIR SELECTION</div>
+        </>
+      ),
       items: [
         {
           label: "Base Asset (Y)",
@@ -277,35 +340,122 @@ const App = () => {
     },
     { separator: true },
     {
-      label: "ANALYSIS PARAMETERS",
+      label: (
+        <>
+          <div className="text-center">ANALYSIS PARAMETERS</div>
+        </>
+      ),
       items: [
         {
-          label: "Timeframe",
-          icon: "pi pi-cog",
-          template: timeframeselectiontemplate,
-        },
-        {
-          label: "Messages",
+          label: "Rolling Window",
           icon: "pi pi-inbox",
-          badge: 2,
-          template: itemRenderer,
-        },
-        {
-          label: "Logout",
-          icon: "pi pi-sign-out",
-          template: itemRenderer,
+          template: rollingwindowtemplate,
         },
       ],
     },
   ];
+
+  ///// chart data manager
+
+  const [chartData, setChartData] = useState(null);
+  const [ySymbol, setYSymbol] = useState("BTCUSDT");
+  const [xSymbol, setXSymbol] = useState("ETHUSDT");
+
+  const [liveData, setLiveData] = useState(null);
+
+  const ws = useRef(null);
+
+  const LoadLiveData = () => {
+    if (ws.current) {
+      ws.current.close();
+      console.log("Previous WebSocket connection closed.");
+    }
+
+    if (!ySymbol || !xSymbol) return;
+
+    const wsUrl = `ws://127.0.0.1:8000/ws/live-data/${ySymbol}/${xSymbol}`;
+    ws.current = new WebSocket(wsUrl);
+
+    ws.current.onopen = () => {
+      console.log(`WebSocket connected to ${wsUrl}`);
+    };
+
+    ws.current.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      // Update our live data state with the new packet
+      setLiveData(message);
+    };
+
+    ws.current.onerror = (error) => {
+      console.error("WebSocket error:", error);
+    };
+
+    ws.current.onclose = () => {
+      console.log("WebSocket disconnected.");
+    };
+  };
+
+  const loadChartData = async () => {
+    // Construct the URL from your state variables
+    const url = `http://127.0.0.1:8000/api/chart-data?y_symbol=${ySymbol}&x_symbol=${xSymbol}&timeframe=1s&window=5`;
+
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+
+        setChartData(data); // Save the fetched data in our state
+        LoadLiveData();
+      } else {
+        // Handle errors as we discussed before
+        console.error("Failed to fetch chart data");
+      }
+    } catch (error) {
+      console.error("API request failed:", error);
+    } finally {
+    }
+  };
+
+  useEffect(() => {
+    loadChartData();
+  }, []);
+
   return (
     <>
+      <Dock
+        model={[]}
+        magnification={false}
+        header={timeframeselectiontemplate}
+      />
       <Toast ref={notificationtoast} />
       <div className="w-full m-1 p-1 shadow-7 min-h-full h-full min-h-screen border-round-sm grid col">
         <div className="col-3">
           <Menu model={items} className="min-w-full min-h-full" />
         </div>
-        <div className="col-9">2</div>
+        <div className="col-9">
+          <>
+            <div>{timeframevalue}</div>
+            <div>{rollingwindowvalue}</div>
+            <div>{rollingwindowvalueinput}</div>
+            <div className="chart-wrapper">
+              <h3>
+                Asset Prices: {ySymbol} vs {xSymbol}
+              </h3>
+              {chartData?.timeseries_data != null &&
+              chartData?.timeseries_data != undefined ? (
+                <PriceChart
+                  yData={chartData.timeseries_data}
+                  xData={chartData.timeseries_data}
+                  ySymbol={ySymbol}
+                  xSymbol={xSymbol}
+                  liveData={liveData}
+                />
+              ) : (
+                <></>
+              )}
+            </div>
+          </>
+        </div>
       </div>
     </>
   );
