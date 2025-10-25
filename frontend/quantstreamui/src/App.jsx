@@ -11,6 +11,11 @@ import { Slider } from "primereact/slider";
 import { InputText } from "primereact/inputtext";
 import PriceChart from "./ChartComponents/PriceChart";
 import { Splitter, SplitterPanel } from "primereact/splitter";
+import "./App.css";
+
+import { Mosaic, MosaicWindow } from "react-mosaic-component";
+
+import "react-mosaic-component/react-mosaic-component.css";
 
 const App = () => {
   ///// Notification Manager
@@ -425,6 +430,12 @@ const App = () => {
 
   const chart1ref = useRef(null);
 
+  const ELEMENT_MAP = {
+    a: <div>Left Window</div>,
+    b: <div>Top Right Window</div>,
+    c: <div>Bottom Right Window</div>,
+  };
+
   return (
     <>
       <Dock
@@ -433,7 +444,7 @@ const App = () => {
         header={timeframeselectiontemplate}
       />
       <Toast ref={notificationtoast} />
-      <div className="w-full m-1 p-1 shadow-7 min-h-full h-full min-h-screen border-round-sm grid col">
+      {/* <div className="w-full m-1 p-1 shadow-7 min-h-full h-full min-h-screen border-round-sm grid col">
         <div className="col-3">
           <Menu model={items} className="min-w-full min-h-full" />
         </div>
@@ -464,6 +475,21 @@ const App = () => {
             </SplitterPanel>
           </Splitter>
         </div>
+      </div> */}
+      <div id="app">
+        <Mosaic
+          renderTile={(id, path) => (
+            <MosaicWindow path={path} title={`Window ${id}`}>
+              <div>This is content for {id}</div>
+            </MosaicWindow>
+          )}
+          initialValue={{
+            direction: "row",
+            first: "Pane1",
+            second: "Pane2",
+            splitPercentage: 50,
+          }}
+        />
       </div>
     </>
   );

@@ -61,8 +61,6 @@ const PriceChart = ({ yData, xData, ySymbol, xSymbol, liveData }) => {
   const RegressionLineRef = useRef(null);
 
   useEffect(() => {
-    console.log(chartContainerRef.current);
-
     const chartOptions = {
       width: chartContainerRef.current.clientWidth,
       height: chartContainerRef.current.clientHeight,
