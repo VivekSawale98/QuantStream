@@ -5,7 +5,13 @@ import {
   createChart,
   LineSeries,
 } from "lightweight-charts";
-import moment from "moment";
+
+function convertToLocalTimestamp(utcIsoString) {
+  const date = new Date(utcIsoString);
+  // offset in milliseconds (local - UTC)
+  const offsetMs = date.getTimezoneOffset() * 60 * 1000;
+  return (date.getTime() - offsetMs) / 1000; // seconds
+}
 
 const formatCandlestickData = (apiData, ohlcKey) => {
   if (!apiData || !ohlcKey) return [];
@@ -16,8 +22,8 @@ const formatCandlestickData = (apiData, ohlcKey) => {
       // The API returns time in the main object, and OHLC in a nested one.
       // We need to flatten this into the structure the chart expects.
       return {
-        time: new Date(d[ohlcKey].timestamp).getTime() / 1000,
-        // time: moment(d[ohlcKey].timestamp).valueOf(),
+        time: convertToLocalTimestamp(d[ohlcKey].timestamp),
+        // time: new Date(d[ohlcKey].timestamp).getTime() / 1000,
         open: d[ohlcKey].open,
         high: d[ohlcKey].high,
         low: d[ohlcKey].low,
@@ -26,19 +32,40 @@ const formatCandlestickData = (apiData, ohlcKey) => {
     });
 };
 
+const formatLineSeriesData = (apiData, ohlcKey, valuekey) => {
+  if (!apiData || !ohlcKey) return [];
+
+  return apiData
+    .filter((d) => d?.[ohlcKey] != null) // Ensure the ohlc data for this key exists
+    .map((d) => {
+      // The API returns time in the main object, and OHLC in a nested one.
+      // We need to flatten this into the structure the chart expects.
+      return {
+        time: convertToLocalTimestamp(d[ohlcKey].timestamp),
+        // time: new Date(d[ohlcKey].timestamp).getTime() / 1000,
+        value: valuekey == "close" ? d[ohlcKey][valuekey] : d[valuekey],
+      };
+    });
+};
+
 const PriceChart = ({ yData, xData, ySymbol, xSymbol, liveData }) => {
-  console.log(xData);
+  // console.log(xData);
 
   const chartContainerRef = useRef(null);
+
+  const chartrefval = useRef(null);
 
   // --- Refs to hold the series objects ---
   const ySeriesRef = useRef(null);
   const xSeriesRef = useRef(null);
+  const RegressionLineRef = useRef(null);
 
   useEffect(() => {
+    console.log(chartContainerRef.current);
+
     const chartOptions = {
       width: chartContainerRef.current.clientWidth,
-      height: 400,
+      height: chartContainerRef.current.clientHeight,
       timeScale: {
         timeVisible: true,
         secondsVisible: true,
@@ -84,7 +111,9 @@ const PriceChart = ({ yData, xData, ySymbol, xSymbol, liveData }) => {
         },
       },
     };
-    const chart = createChart(chartContainerRef.current, chartOptions);
+    chartrefval.current = createChart(chartContainerRef.current, chartOptions);
+
+    const chart = chartrefval.current;
 
     // --- SERIES 1: Base Asset (Y) on the RIGHT scale ---
     ySeriesRef.current = chart.addSeries(CandlestickSeries, {
@@ -94,21 +123,35 @@ const PriceChart = ({ yData, xData, ySymbol, xSymbol, liveData }) => {
       borderVisible: false,
       wickUpColor: "#26a69a",
       wickDownColor: "#ef5350",
-      priceScaleId: "right", // <-- Attach to the right scale
+      priceScaleId: "right",
     });
     ySeriesRef.current.setData(formatCandlestickData(yData, "y_ohlc"));
 
-    // --- SERIES 2: Hedge Asset (X) on the LEFT scale ---
-    xSeriesRef.current = chart.addSeries(CandlestickSeries, {
+    // --- SERIES 2: Regression Line on Right as these is expected value of Base ---
+    RegressionLineRef.current = chart.addSeries(LineSeries, {
+      title: "Regression Line",
+      color: "#5a6161ff",
+      downColor: "#ef5350",
+      borderVisible: false,
+      wickUpColor: "#717776ff",
+      wickDownColor: "#ef5350",
+      priceScaleId: "right",
+    });
+    RegressionLineRef.current.setData(
+      formatLineSeriesData(yData, "y_ohlc", "regression_line_value")
+    );
+
+    // --- SERIES 3: Hedge Asset (X) on the LEFT scale ---
+    xSeriesRef.current = chart.addSeries(LineSeries, {
       title: xSymbol,
-      upColor: "rgba(41, 98, 255, 0.8)",
+      color: "rgba(41, 98, 255, 0.8)",
       downColor: "rgba(255, 109, 0, 0.8)",
       borderVisible: false,
       wickUpColor: "rgba(41, 98, 255, 0.8)",
       wickDownColor: "rgba(255, 109, 0, 0.8)",
-      priceScaleId: "left", // <-- Attach to the left scale
+      priceScaleId: "left",
     });
-    xSeriesRef.current.setData(formatCandlestickData(xData, "x_ohlc"));
+    xSeriesRef.current.setData(formatLineSeriesData(xData, "x_ohlc", "close"));
 
     const dataTimeRange = ySeriesRef.current.data(); // Or xSeries, they are the same
 
@@ -122,6 +165,26 @@ const PriceChart = ({ yData, xData, ySymbol, xSymbol, liveData }) => {
       // Fallback if there is no data
       chart.timeScale().fitContent();
     }
+
+    // --- 3. THE RESIZE OBSERVER LOGIC ---
+    const resizeObserver = new ResizeObserver((entries) => {
+      // This callback fires when the container's size changes
+      const { width, height } = entries[0].contentRect;
+      chart.applyOptions({ width, height });
+    });
+
+    // Start observing the chart container
+    resizeObserver.observe(chartContainerRef.current);
+
+    // --- 4. Cleanup Function ---
+    return () => {
+      // Stop observing and remove the chart when the component unmounts
+      resizeObserver.disconnect();
+      if (chartrefval.current) {
+        chartrefval.current.remove();
+        chartrefval.current = null;
+      }
+    };
   }, [xData, yData, ySymbol, xSymbol]);
 
   useEffect(() => {
@@ -130,7 +193,8 @@ const PriceChart = ({ yData, xData, ySymbol, xSymbol, liveData }) => {
     }
 
     const yUpdate = {
-      time: new Date(liveData.time).getTime() / 1000,
+      time: convertToLocalTimestamp(liveData.time),
+      // time: new Date(liveData.time).getTime() / 1000,
       open: liveData.y_price,
       high: liveData.y_price,
       low: liveData.y_price,
@@ -138,27 +202,43 @@ const PriceChart = ({ yData, xData, ySymbol, xSymbol, liveData }) => {
     };
 
     const xUpdate = {
-      time: new Date(liveData.time).getTime() / 1000,
-      open: liveData.x_price,
-      high: liveData.x_price,
-      low: liveData.x_price,
-      close: liveData.x_price,
+      time: convertToLocalTimestamp(liveData.time),
+      // time: new Date(liveData.time).getTime() / 1000,
+      value: liveData.x_price,
+    };
+
+    const regUpdate = {
+      time: convertToLocalTimestamp(liveData.time),
+      // time: new Date(liveData.time).getTime() / 1000,
+      value: liveData.regression_line_value,
     };
 
     // Use the .update() method to append the new data point
     ySeriesRef.current.update(yUpdate);
+    RegressionLineRef.current.update(regUpdate);
     xSeriesRef.current.update(xUpdate);
   }, [liveData]);
 
+  // useEffect(() => {
+  //   console.log("Refs Value");
+
+  //   console.log(chart1ref.current);
+
+  //   chartrefval.current.applyOptions({
+  //     width: chart1ref.current.clientWidth,
+  //     height: chart1ref.current.clientHeight,
+  //   });
+  // }, [chart1ref.current.clientHeight]);
+
   return (
     <>
-      <div style={{ position: "relative", width: "100%", height: "400px" }}>
+      {/* <div style={{ position: "relative", width: "100%", height: "400px" }}>
         <div
           style={{
             position: "absolute",
             top: "10px",
             left: "10px",
-            zIndex: 999, // Make sure it's on top of the chart
+            zIndex: 999,
             display: "flex",
             gap: "20px",
             background: "rgba(255, 255, 255, 0.8)",
@@ -184,11 +264,13 @@ const PriceChart = ({ yData, xData, ySymbol, xSymbol, liveData }) => {
             <span>{xSymbol} (Hedge)</span>
           </div>
         </div>
-        <div
-          ref={chartContainerRef}
-          style={{ width: "100%", height: "100%" }}
-        />
-      </div>
+      </div> */}
+
+      <div
+        ref={chartContainerRef}
+        className="flex"
+        style={{ width: "100%", height: "100%" }}
+      />
     </>
   );
 };

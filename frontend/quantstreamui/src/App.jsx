@@ -10,6 +10,7 @@ import { Dock } from "primereact/dock";
 import { Slider } from "primereact/slider";
 import { InputText } from "primereact/inputtext";
 import PriceChart from "./ChartComponents/PriceChart";
+import { Splitter, SplitterPanel } from "primereact/splitter";
 
 const App = () => {
   ///// Notification Manager
@@ -420,6 +421,10 @@ const App = () => {
     loadChartData();
   }, []);
 
+  /////// chart dimensions manager
+
+  const chart1ref = useRef(null);
+
   return (
     <>
       <Dock
@@ -433,28 +438,31 @@ const App = () => {
           <Menu model={items} className="min-w-full min-h-full" />
         </div>
         <div className="col-9">
-          <>
-            <div>{timeframevalue}</div>
-            <div>{rollingwindowvalue}</div>
-            <div>{rollingwindowvalueinput}</div>
-            <div className="chart-wrapper">
-              <h3>
-                Asset Prices: {ySymbol} vs {xSymbol}
-              </h3>
-              {chartData?.timeseries_data != null &&
-              chartData?.timeseries_data != undefined ? (
-                <PriceChart
-                  yData={chartData.timeseries_data}
-                  xData={chartData.timeseries_data}
-                  ySymbol={ySymbol}
-                  xSymbol={xSymbol}
-                  liveData={liveData}
-                />
-              ) : (
-                <></>
-              )}
-            </div>
-          </>
+          <Splitter style={{ height: "100vh" }} layout="vertical">
+            <SplitterPanel className="flex flex-column">
+              <div className="p-p-2">
+                <h3>
+                  Asset Prices: {ySymbol} vs {xSymbol}
+                </h3>
+              </div>
+              <div className="flex-grow-1">
+                {chartData?.timeseries_data ? (
+                  <PriceChart
+                    yData={chartData.timeseries_data}
+                    xData={chartData.timeseries_data}
+                    ySymbol={ySymbol}
+                    xSymbol={xSymbol}
+                    liveData={liveData}
+                  />
+                ) : (
+                  <div className="flex align-items-center justify-content-center h-full"></div>
+                )}
+              </div>
+            </SplitterPanel>
+            <SplitterPanel className="flex align-items-center justify-content-center">
+              Panel 2
+            </SplitterPanel>
+          </Splitter>
         </div>
       </div>
     </>
