@@ -39,7 +39,7 @@ const ChartLegend = ({
               borderTop: "3px solid #be1238",
             }}
           />
-          <span>Correlation</span>
+          <span>Rolling Correlation</span>
         </div>
         <span style={{ fontWeight: "bold", marginLeft: "20px" }}>
           {correlationPrice}

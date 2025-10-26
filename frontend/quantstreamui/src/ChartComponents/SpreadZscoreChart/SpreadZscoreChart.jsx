@@ -64,6 +64,8 @@ const SpreadZscoreChart = ({
 
   const [hoverData, setHoverData] = useState(null);
 
+  const lastUpdateTimeRef = useRef(null);
+
   useEffect(() => {
     const chartOptions = {
       width: chartContainerRef.current.clientWidth,
@@ -130,7 +132,17 @@ const SpreadZscoreChart = ({
       priceLineVisible: true,
       priceLineColor: "#26a69a",
     });
-    SpreadSeriesRef.current.setData(formatAreaSeriesData(yData, "spread"));
+
+    let formattedAreaSeriesData = formatAreaSeriesData(yData, "spread");
+    SpreadSeriesRef.current.setData(formattedAreaSeriesData);
+
+    if (formattedAreaSeriesData.length > 0) {
+      // Get the timestamp of the very last historical bar
+      const lastHistoricalTime =
+        formattedAreaSeriesData[formattedAreaSeriesData.length - 1].time;
+      // Set our ref to this time.
+      lastUpdateTimeRef.current = lastHistoricalTime;
+    }
 
     // --- SERIES 2: Z-score Standara Amount on Right ---
     ZScoreLineRef.current = chart.addSeries(LineSeries, {
@@ -144,6 +156,7 @@ const SpreadZscoreChart = ({
       lastValueVisible: true,
       priceLineVisible: false,
     });
+
     ZScoreLineRef.current.setData(formatLineSeriesData(yData, "z_score"));
 
     // --- SERIES 3: Spread Mean on Left  ---
@@ -203,10 +216,27 @@ const SpreadZscoreChart = ({
       });
     });
 
+    const timer = setTimeout(() => {
+      if (chartrefval.current) {
+        // Check if chart still exists
+        const dataTimeRange = SpreadSeriesRef.current.data();
+        if (dataTimeRange.length > 1) {
+          const dataLength = dataTimeRange.length;
+
+          // Use setVisibleLogicalRange as it's the most robust method
+          chartrefval.current.timeScale().setVisibleLogicalRange({
+            from: Math.max(0, dataLength - 50), // Show last 100 bars
+            to: dataLength - 1,
+          });
+        }
+      }
+    }, 0);
+
     // --- 4. Cleanup Function ---
     return () => {
       // Stop observing and remove the chart when the component unmounts
       resizeObserver.disconnect();
+      clearTimeout(timer);
       if (chartrefval.current) {
         chartrefval.current.remove();
         chartrefval.current = null;
@@ -228,6 +258,12 @@ const SpreadZscoreChart = ({
       time: convertToLocalTimestamp(liveData.time),
       value: liveData.z_score,
     };
+
+    let newTime = convertToLocalTimestamp(liveData.time);
+    // If the new time is not strictly greater than the last update time, ignore this packet.
+    if (lastUpdateTimeRef.current && newTime <= lastUpdateTimeRef.current) {
+      return;
+    }
 
     // Use the .update() method to append the new data point
     SpreadSeriesRef.current.update(spreadUpdate);

@@ -61,6 +61,8 @@ const AssetComparisionChart = ({
 
   const [hoverData, setHoverData] = useState(null);
 
+  const lastUpdateTimeRef = useRef(null);
+
   useEffect(() => {
     const chartOptions = {
       width: chartContainerRef.current.clientWidth,
@@ -127,7 +129,18 @@ const AssetComparisionChart = ({
       priceLineVisible: true,
       priceLineColor: "#26a69a",
     });
-    ySeriesRef.current.setData(formatCandlestickData(yData, "y_ohlc"));
+
+    const formattedCandlestick = formatCandlestickData(yData, "y_ohlc");
+
+    ySeriesRef.current.setData(formattedCandlestick);
+
+    if (formattedCandlestick.length > 0) {
+      // Get the timestamp of the very last historical bar
+      const lastHistoricalTime =
+        formattedCandlestick[formattedCandlestick.length - 1].time;
+      // Set our ref to this time.
+      lastUpdateTimeRef.current = lastHistoricalTime;
+    }
 
     // --- SERIES 2: Regression Line on Right as these is expected value of Base ---
     RegressionLineRef.current = chart.addSeries(LineSeries, {
@@ -258,6 +271,15 @@ const AssetComparisionChart = ({
       time: convertToLocalTimestamp(liveData.time),
       value: liveData.regression_line_value,
     };
+
+    let newTime = convertToLocalTimestamp(liveData.time);
+    // If the new time is not strictly greater than the last update time, ignore this packet.
+    if (lastUpdateTimeRef.current && newTime <= lastUpdateTimeRef.current) {
+      return;
+    }
+
+    // If we've passed the guard, update the last update time immediately
+    lastUpdateTimeRef.current = newTime;
 
     // Use the .update() method to append the new data point
     ySeriesRef.current.update(yUpdate);

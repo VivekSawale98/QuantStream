@@ -11,6 +11,7 @@ import { Message } from "primereact/message";
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 import { ShowerrorAlert } from "./Helpers/Loaderhelper";
+import { Button } from "primereact/button";
 
 import { Mosaic, MosaicWindow } from "react-mosaic-component";
 
@@ -19,8 +20,60 @@ import AssetComparisionChart from "./ChartComponents/AssetComparisionChart/Asset
 import ChartLoader from "./ChartComponents/Helpers/ChartLoader";
 import SpreadZscoreChart from "./ChartComponents/SpreadZscoreChart/SpreadZscoreChart";
 import CorrelationChart from "./ChartComponents/CorrelationChart/CorrelationChart";
+import AlertCreationForm from "./Componets/AlertCreationForm";
+import { classNames } from "primereact/utils";
 
 const App = () => {
+  ///// alert data manager
+
+  const [isalertformvisible, setisalertformvisible] = useState(false);
+
+  const [alertdata, setalertdata] = useState(null);
+
+  useEffect(() => {
+    const loadalertdata = async () => {
+      let fetchalertdata = await fetch(
+        `${import.meta.env.VITE_BACKEND_URL}/api/alerts`
+      );
+
+      if (!fetchalertdata.ok) {
+        ShowerrorAlert(
+          "Unable to fetch alerts",
+          "please refresh the page and try again"
+        );
+      }
+      let maindata = await fetchalertdata.json();
+
+      setalertdata(maindata);
+    };
+    loadalertdata();
+  }, []);
+
+  const deletealertdata = async (id) => {
+    let option = {
+      method: "DELETE",
+    };
+    let fetchalertdelete = await fetch(
+      `${import.meta.env.VITE_BACKEND_URL}/api/alerts/${id}`,
+      option
+    );
+
+    if (!fetchalertdelete.ok) {
+      ShowerrorAlert(
+        "Unable to delete alerts",
+        "please refresh the page and try again"
+      );
+    }
+
+    let vessalertdata = JSON.parse(JSON.stringify(alertdata));
+
+    let maindatalst = vessalertdata.filter((dat) => {
+      return dat?.id != id;
+    });
+
+    setalertdata(maindatalst);
+  };
+
   ///// Notification Manager
 
   const notificationtoast = useRef(null);
@@ -106,7 +159,7 @@ const App = () => {
   const timeframeselectiontemplateselectbtn = (option) => {
     return option?.template;
   };
-  const [timeframevalue, settimeframevalue] = useState("1m");
+  const [timeframevalue, settimeframevalue] = useState("1s");
 
   /// rolling window value
 
@@ -261,6 +314,50 @@ const App = () => {
     );
   };
 
+  const hedgeandadftestvalues = (item) => {
+    return (
+      <>
+        <div className="flex flex-row">
+          {chartData && (
+            <div
+              style={{
+                backgroundColor: "lightgray",
+                background: "transparent",
+              }}
+              className="p-2"
+            >
+              <span>Hedge Ratio:</span> &nbsp;
+              <strong>
+                {chartData.analytics_summary.hedge_ratio.toFixed(4)}
+              </strong>
+            </div>
+          )}
+          {chartData ? (
+            <div className="p-2 flex flex-row">
+              <span>
+                ADF Test p-value:{" "}
+                <strong>
+                  {chartData.analytics_summary.adf_p_value.toFixed(3)}
+                </strong>
+              </span>
+              {chartData.analytics_summary.adf_p_value < 0.05 ? (
+                <span style={{ color: "green" }}>
+                  ✓ The spread appears to be stationary.
+                </span>
+              ) : (
+                <span style={{ color: "orange" }}>
+                  ⚠️ The spread may not be stationary.
+                </span>
+              )}
+            </div>
+          ) : (
+            <p>Load data to see analysis.</p>
+          )}
+        </div>
+      </>
+    );
+  };
+
   const rollingwindowtemplate = (item) => {
     return (
       <>
@@ -305,13 +402,70 @@ const App = () => {
             />
             <Slider
               value={rollingwindowvalue}
-              onChange={(e) => setrollingwindowvalue(e.value)}
+              onChange={(e) => {
+                setrollingwindowvalue(e.value);
+                setrollingwindowvalueinput(e.value);
+              }}
               className="w-full"
               id="rollingwindowparam"
               min={10}
               max={200}
               e
             />
+          </div>
+        </div>
+      </>
+    );
+  };
+
+  const AlertCreationTemplate = () => {
+    return (
+      <>
+        <div className="flex flex-column justify-content-center">
+          <Button
+            label="Create Alert"
+            icon="pi pi-bell"
+            disabled={
+              !(
+                paironeselectionbaseY?.name != null &&
+                paironeselectionhedgeX?.name != null
+              )
+            }
+            onClick={() => {
+              setisalertformvisible(true);
+            }}
+          />
+          <div style={{ overflowY: "scroll", height: "13rem" }}>
+            {alertdata ? (
+              alertdata.map((aldata) => {
+                return (
+                  <>
+                    <div className="flex flex-row shadow-2 text-center font-bold p-2">
+                      <div>
+                        {aldata?.symbol_pair} {aldata?.metric} is{" "}
+                        {aldata?.condition == ">" ? "greater" : "less"} than{" "}
+                        {aldata?.value}{" "}
+                      </div>
+                      <Button
+                        icon="pi pi-trash"
+                        rounded
+                        text
+                        raised
+                        severity="danger"
+                        aria-label="Cancel"
+                        size="small"
+                        className="ml-1"
+                        onClick={() => {
+                          deletealertdata(aldata?.id);
+                        }}
+                      />
+                    </div>
+                  </>
+                );
+              })
+            ) : (
+              <></>
+            )}
           </div>
         </div>
       </>
@@ -370,6 +524,16 @@ const App = () => {
         },
       ],
     },
+    { separator: true },
+    {
+      items: [
+        {
+          label: "",
+          icon: "pi pi-inbox",
+          template: AlertCreationTemplate,
+        },
+      ],
+    },
   ];
 
   ///// chart data manager
@@ -403,8 +567,27 @@ const App = () => {
 
     ws.current.onmessage = (event) => {
       const message = JSON.parse(event.data);
-      // Update our live data state with the new packet
-      setLiveData(message);
+
+      if (message?.type != null) {
+        /// alert data
+
+        showNotification(true, "warn", message?.message, "Alert", 5000);
+
+        setTimeout(() => {
+          setalertdata((alertdatavess) => {
+            let vessalertdata = JSON.parse(JSON.stringify(alertdatavess));
+
+            let maindatalst = vessalertdata.filter((dat) => {
+              return dat?.id != message?.alert_id;
+            });
+
+            return maindatalst;
+          });
+        }, 1000);
+      } else {
+        // Update our live data state with the new packet
+        setLiveData(message);
+      }
     };
 
     ws.current.onerror = (error) => {
@@ -433,6 +616,8 @@ const App = () => {
         setChartData(data); // Save the fetched data in our state
         LoadLiveData();
       } else {
+        let data = await response.json();
+        showNotification(false, "warn", data?.detail, "Alert", 5000);
         // Handle errors as we discussed before
         console.error("Failed to fetch chart data");
       }
@@ -596,6 +781,26 @@ const App = () => {
 
   return (
     <>
+      <AlertCreationForm
+        isalertformvisible={isalertformvisible}
+        setisalertformvisible={setisalertformvisible}
+        baseasset={paironeselectionbaseY}
+        hedgeasset={paironeselectionhedgeX}
+        setalertdata={setalertdata}
+      />
+      <Dock
+        model={[]}
+        magnification={false}
+        header={hedgeandadftestvalues}
+        style={{
+          zIndex: 99999,
+          marginLeft: "10%",
+        }}
+        position="top"
+        className={classNames({
+          hidden: isalertformvisible || chartData == null,
+        })}
+      />
       <Dock
         model={[]}
         magnification={false}
@@ -604,6 +809,9 @@ const App = () => {
           zIndex: 99999,
           marginLeft: "10%",
         }}
+        className={classNames({
+          hidden: isalertformvisible,
+        })}
       />
       <Toast ref={notificationtoast} />
       <style>{`

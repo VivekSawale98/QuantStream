@@ -126,7 +126,7 @@ const CorrelationChart = ({
 
     // --- SERIES 1: Spread Amount Series on Left   ---
     RollingCorrelationSeriesRef.current = chart.addSeries(BaselineSeries, {
-      title: "Correlation",
+      title: "Rolling Correlation",
       baseValue: { type: "price", price: 0.7 },
       topLineColor: "rgba( 38, 166, 154, 1)",
       topFillColor1: "rgba( 38, 166, 154, 0.28)",
@@ -228,10 +228,27 @@ const CorrelationChart = ({
       });
     });
 
+    const timer = setTimeout(() => {
+      if (chartrefval.current) {
+        // Check if chart still exists
+        const dataTimeRange = RollingCorrelationSeriesRef.current.data();
+        if (dataTimeRange.length > 1) {
+          const dataLength = dataTimeRange.length;
+
+          // Use setVisibleLogicalRange as it's the most robust method
+          chartrefval.current.timeScale().setVisibleLogicalRange({
+            from: Math.max(0, dataLength - 50), // Show last 100 bars
+            to: dataLength - 1,
+          });
+        }
+      }
+    }, 0);
+
     // --- 4. Cleanup Function ---
     return () => {
       // Stop observing and remove the chart when the component unmounts
       resizeObserver.disconnect();
+      clearTimeout(timer);
       if (chartrefval.current) {
         chartrefval.current.remove();
         chartrefval.current = null;
