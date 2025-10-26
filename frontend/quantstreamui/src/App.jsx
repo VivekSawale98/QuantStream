@@ -1,21 +1,24 @@
-import { Menu } from "primereact/menu";
-import { useEffect, useRef, useState } from "react";
-import { ShowerrorAlert, Showloader } from "./Helpers/Loaderhelper";
+import { Dock } from "primereact/dock";
 import { Dropdown } from "primereact/dropdown";
 import { ChevronDownIcon } from "primereact/icons/chevrondown";
 import { ChevronRightIcon } from "primereact/icons/chevronright";
-import { Toast } from "primereact/toast";
-import { SelectButton } from "primereact/selectbutton";
-import { Dock } from "primereact/dock";
-import { Slider } from "primereact/slider";
 import { InputText } from "primereact/inputtext";
-import PriceChart from "./ChartComponents/PriceChart";
-import { Splitter, SplitterPanel } from "primereact/splitter";
+import { Menu } from "primereact/menu";
+import { SelectButton } from "primereact/selectbutton";
+import { Slider } from "primereact/slider";
+import { Toast } from "primereact/toast";
+import { Message } from "primereact/message";
+import { useEffect, useRef, useState } from "react";
 import "./App.css";
+import { ShowerrorAlert } from "./Helpers/Loaderhelper";
 
 import { Mosaic, MosaicWindow } from "react-mosaic-component";
 
 import "react-mosaic-component/react-mosaic-component.css";
+import AssetComparisionChart from "./ChartComponents/AssetComparisionChart/AssetComparisionChart";
+import ChartLoader from "./ChartComponents/Helpers/ChartLoader";
+import SpreadZscoreChart from "./ChartComponents/SpreadZscoreChart/SpreadZscoreChart";
+import CorrelationChart from "./ChartComponents/CorrelationChart/CorrelationChart";
 
 const App = () => {
   ///// Notification Manager
@@ -63,6 +66,12 @@ const App = () => {
 
   const [paironeselectionhedgeX, setpaironeselectionhedgeX] = useState(null);
 
+  const [paironeselectionbaseYref, setpaironeselectionbaseYref] =
+    useState(null);
+
+  const [paironeselectionhedgeXref, setpaironeselectionhedgeXref] =
+    useState(null);
+
   ///// analysis parameters
 
   /// timeframe
@@ -97,7 +106,7 @@ const App = () => {
   const timeframeselectiontemplateselectbtn = (option) => {
     return option?.template;
   };
-  const [timeframevalue, settimeframevalue] = useState("1s");
+  const [timeframevalue, settimeframevalue] = useState("1m");
 
   /// rolling window value
 
@@ -156,6 +165,7 @@ const App = () => {
                 paironeselectionhedgeX?.symbol != e.value?.symbol
               ) {
                 setpaironeselectionbaseY(e.value);
+                setpaironeselectionbaseYref(e);
               } else {
                 showNotification(
                   false,
@@ -204,6 +214,7 @@ const App = () => {
                 paironeselectionbaseY?.symbol != e.value?.symbol
               ) {
                 setpaironeselectionhedgeX(e.value);
+                setpaironeselectionhedgeXref(e);
               } else {
                 showNotification(
                   false,
@@ -316,7 +327,7 @@ const App = () => {
           <span className="inline-flex align-items-center gap-1 px-2 py-2">
             <i className="pi pi-chart-bar p-2"></i>
             <span className="text-black-alpha-90 font-bold text-center">
-              <span className="text-900">QuantStream Analytics Dashboard</span>
+              <span className="text-lg">QuantStream Analytics Dashboard</span>
             </span>
           </span>
         );
@@ -364,8 +375,8 @@ const App = () => {
   ///// chart data manager
 
   const [chartData, setChartData] = useState(null);
-  const [ySymbol, setYSymbol] = useState("BTCUSDT");
-  const [xSymbol, setXSymbol] = useState("ETHUSDT");
+
+  const [isloading, setisloading] = useState(false);
 
   const [liveData, setLiveData] = useState(null);
 
@@ -377,9 +388,13 @@ const App = () => {
       console.log("Previous WebSocket connection closed.");
     }
 
-    if (!ySymbol || !xSymbol) return;
+    if (!paironeselectionbaseY || !paironeselectionhedgeX) return;
 
-    const wsUrl = `ws://127.0.0.1:8000/ws/live-data/${ySymbol}/${xSymbol}`;
+    const wsUrl = `ws://${
+      import.meta.env.VITE_BACKEND_URL_WEBSOCKET
+    }/ws/live-data/${paironeselectionbaseY?.symbol}/${
+      paironeselectionhedgeX?.symbol
+    }`;
     ws.current = new WebSocket(wsUrl);
 
     ws.current.onopen = () => {
@@ -402,8 +417,13 @@ const App = () => {
   };
 
   const loadChartData = async () => {
+    setisloading(true);
     // Construct the URL from your state variables
-    const url = `http://127.0.0.1:8000/api/chart-data?y_symbol=${ySymbol}&x_symbol=${xSymbol}&timeframe=1s&window=5`;
+    const url = `${import.meta.env.VITE_BACKEND_URL}/api/chart-data?y_symbol=${
+      paironeselectionbaseY?.symbol
+    }&x_symbol=${
+      paironeselectionhedgeX?.symbol
+    }&timeframe=${timeframevalue}&window=${rollingwindowvalue}`;
 
     try {
       const response = await fetch(url);
@@ -419,21 +439,159 @@ const App = () => {
     } catch (error) {
       console.error("API request failed:", error);
     } finally {
+      setisloading(false);
     }
   };
 
   useEffect(() => {
-    loadChartData();
-  }, []);
+    if (paironeselectionhedgeX && paironeselectionbaseY) {
+      setLiveData(null);
+      setChartData(null);
+      loadChartData();
+    }
+  }, [
+    paironeselectionbaseY,
+    paironeselectionhedgeX,
+    rollingwindowvalue,
+    timeframevalue,
+  ]);
 
   /////// chart dimensions manager
 
   const chart1ref = useRef(null);
 
-  const ELEMENT_MAP = {
-    a: <div>Left Window</div>,
-    b: <div>Top Right Window</div>,
-    c: <div>Bottom Right Window</div>,
+  const [layoutcycle, setlayoutcycle] = useState();
+
+  const [currentLayout, setCurrentLayout] = useState({
+    direction: "row",
+    first: "sidebar-locked-component",
+    second: {
+      direction: "column",
+      first: "assetprice-comparision--component",
+      second: {
+        direction: "row",
+        first: "spread&zscore--component",
+        second: "rollingCorrelation--component",
+        splitPercentage: 50,
+      },
+      splitPercentage: 50,
+    },
+    splitPercentage: 20,
+  });
+
+  const handleLayoutChange = (newLayout) => {
+    console.log(newLayout);
+
+    if (newLayout.splitPercentage !== 20) {
+      newLayout.splitPercentage = 20;
+    }
+    setCurrentLayout(newLayout);
+  };
+
+  const ComponentMapper = {
+    "sidebar-locked-component": (
+      <>
+        <Menu model={items} className="min-w-full min-h-full" />
+      </>
+    ),
+    "assetprice-comparision--component": (
+      <>
+        {chartData?.timeseries_data &&
+        paironeselectionbaseY &&
+        paironeselectionhedgeX ? (
+          <AssetComparisionChart
+            yData={chartData.timeseries_data}
+            xData={chartData.timeseries_data}
+            ySymbol={paironeselectionbaseY}
+            xSymbol={paironeselectionhedgeX}
+            liveData={liveData}
+            symboldata={symboldata}
+          />
+        ) : isloading ? (
+          <ChartLoader isloadervisible={isloading} />
+        ) : (
+          <div className="flex align-items-center justify-content-center h-full">
+            <Message
+              severity="info"
+              text={
+                !paironeselectionbaseY && !paironeselectionhedgeX
+                  ? `Please select Base & Hedge Assets`
+                  : `Select ${!paironeselectionbaseY ? "Base" : "Hedge"} asset`
+              }
+            />
+          </div>
+        )}
+      </>
+    ),
+    "spread&zscore--component": (
+      <>
+        {chartData?.timeseries_data &&
+        paironeselectionbaseY &&
+        paironeselectionhedgeX ? (
+          <SpreadZscoreChart
+            yData={chartData.timeseries_data}
+            xData={chartData.timeseries_data}
+            ySymbol={paironeselectionbaseY}
+            xSymbol={paironeselectionhedgeX}
+            liveData={liveData}
+            symboldata={symboldata}
+            summarydata={chartData.analytics_summary}
+          />
+        ) : isloading ? (
+          <ChartLoader isloadervisible={isloading} />
+        ) : (
+          <div className="flex align-items-center justify-content-center h-full">
+            <Message
+              severity="info"
+              text={
+                !paironeselectionbaseY && !paironeselectionhedgeX
+                  ? `Please select Base & Hedge Assets`
+                  : `Select ${!paironeselectionbaseY ? "Base" : "Hedge"} asset`
+              }
+            />
+          </div>
+        )}
+      </>
+    ),
+    "rollingCorrelation--component": (
+      <>
+        {chartData?.timeseries_data &&
+        paironeselectionbaseY &&
+        paironeselectionhedgeX ? (
+          <CorrelationChart
+            yData={chartData.timeseries_data}
+            xData={chartData.timeseries_data}
+            ySymbol={paironeselectionbaseY}
+            xSymbol={paironeselectionhedgeX}
+            liveData={liveData}
+            symboldata={symboldata}
+            summarydata={chartData.analytics_summary}
+            windowSize={rollingwindowvalue}
+            timeframeinseconds={timeframevalue}
+          />
+        ) : isloading ? (
+          <ChartLoader isloadervisible={isloading} />
+        ) : (
+          <div className="flex align-items-center justify-content-center h-full">
+            <Message
+              severity="info"
+              text={
+                !paironeselectionbaseY && !paironeselectionhedgeX
+                  ? `Please select Base & Hedge Assets`
+                  : `Select ${!paironeselectionbaseY ? "Base" : "Hedge"} asset`
+              }
+            />
+          </div>
+        )}
+      </>
+    ),
+  };
+
+  const windowtitlemapper = {
+    "sidebar-locked-component": "",
+    "assetprice-comparision--component": "",
+    "spread&zscore--component": "",
+    "rollingCorrelation--component": "",
   };
 
   return (
@@ -442,53 +600,55 @@ const App = () => {
         model={[]}
         magnification={false}
         header={timeframeselectiontemplate}
+        style={{
+          zIndex: 99999,
+          marginLeft: "10%",
+        }}
       />
       <Toast ref={notificationtoast} />
-      {/* <div className="w-full m-1 p-1 shadow-7 min-h-full h-full min-h-screen border-round-sm grid col">
-        <div className="col-3">
-          <Menu model={items} className="min-w-full min-h-full" />
-        </div>
-        <div className="col-9">
-          <Splitter style={{ height: "100vh" }} layout="vertical">
-            <SplitterPanel className="flex flex-column">
-              <div className="p-p-2">
-                <h3>
-                  Asset Prices: {ySymbol} vs {xSymbol}
-                </h3>
-              </div>
-              <div className="flex-grow-1">
-                {chartData?.timeseries_data ? (
-                  <PriceChart
-                    yData={chartData.timeseries_data}
-                    xData={chartData.timeseries_data}
-                    ySymbol={ySymbol}
-                    xSymbol={xSymbol}
-                    liveData={liveData}
-                  />
-                ) : (
-                  <div className="flex align-items-center justify-content-center h-full"></div>
-                )}
-              </div>
-            </SplitterPanel>
-            <SplitterPanel className="flex align-items-center justify-content-center">
-              Panel 2
-            </SplitterPanel>
-          </Splitter>
-        </div>
-      </div> */}
-      <div id="app">
+      <style>{`
+        .mosaic-window-toolbar {
+          min-height: 10px !important;
+          height: 5px !important;
+          padding: 10px 16px !important;
+        }
+        .hide-toolbar .mosaic-window-toolbar {
+          display: none !important;
+        }
+      `}</style>
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          right: 0,
+          bottom: 0,
+          left: 0,
+        }}
+      >
         <Mosaic
-          renderTile={(id, path) => (
-            <MosaicWindow path={path} title={`Window ${id}`}>
-              <div>This is content for {id}</div>
-            </MosaicWindow>
-          )}
-          initialValue={{
-            direction: "row",
-            first: "Pane1",
-            second: "Pane2",
-            splitPercentage: 50,
+          value={currentLayout}
+          onChange={handleLayoutChange}
+          renderTile={(id, path) => {
+            return (
+              <MosaicWindow
+                path={path}
+                title={
+                  <>
+                    <div>{windowtitlemapper[id]}</div>
+                  </>
+                }
+                draggable={!(id.indexOf("-locked-") >= 0)}
+                toolbarControls={[<></>]}
+                className={!(id.indexOf("-locked-") >= 0) ? "" : "hide-toolbar"}
+              >
+                {ComponentMapper[id]}
+              </MosaicWindow>
+            );
           }}
+          // Enable/disable resize
+          resize={{ minimumPaneSizePercentage: 10 }}
+          // CSS class for styling
+          className="mosaic-blueprint-theme"
         />
       </div>
     </>
